@@ -75,8 +75,6 @@
 		"@mistralai/mistralai": "^2.2.0",
 		"openai": "6.26.0",
 		"partial-json": "^0.1.7",
-		"proxy-agent": "^6.5.0",
-		"proxy-from-env": "^1.1.0",
 		"typebox": "^1.1.24"
 	},
 	"keywords": [
