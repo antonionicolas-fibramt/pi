@@ -74,14 +74,11 @@ describe("createAgentSession stream options", () => {
 
 	async function captureStreamOptions(
 		api: Api,
-		settings: { httpIdleTimeoutMs?: number },
+		settings: { httpIdleTimeoutMs?: number; websocketConnectTimeoutMs?: number },
 		requestOptions: SimpleStreamOptions = {},
 	): Promise<SimpleStreamOptions | undefined> {
 		const model = createModel(api);
-		const settingsManager = SettingsManager.create(cwd, agentDir);
-		if (settings.httpIdleTimeoutMs !== undefined) {
-			settingsManager.setHttpIdleTimeoutMs(settings.httpIdleTimeoutMs);
-		}
+		const settingsManager = SettingsManager.inMemory(settings);
 
 		const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
 		authStorage.setRuntimeApiKey(model.provider, "test-api-key");
@@ -136,5 +133,21 @@ describe("createAgentSession stream options", () => {
 		);
 
 		expect(options?.timeoutMs).toBe(0);
+	});
+
+	it("forwards websocketConnectTimeoutMs from settings", async () => {
+		const options = await captureStreamOptions("openai-codex-responses", { websocketConnectTimeoutMs: 1234 });
+
+		expect(options?.websocketConnectTimeoutMs).toBe(1234);
+	});
+
+	it("lets request websocketConnectTimeoutMs override settings", async () => {
+		const options = await captureStreamOptions(
+			"openai-codex-responses",
+			{ websocketConnectTimeoutMs: 1234 },
+			{ websocketConnectTimeoutMs: 0 },
+		);
+
+		expect(options?.websocketConnectTimeoutMs).toBe(0);
 	});
 });

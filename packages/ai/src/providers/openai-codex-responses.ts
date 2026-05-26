@@ -53,6 +53,7 @@ const JWT_CLAIM_PATH = "https://api.openai.com/auth" as const;
 const DEFAULT_MAX_RETRIES = 0;
 const BASE_DELAY_MS = 1000;
 const DEFAULT_MAX_RETRY_DELAY_MS = 60_000;
+const DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS = 15_000;
 const CODEX_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 const WEBSOCKET_MESSAGE_TOO_BIG_CLOSE_CODE = 1009;
 
@@ -224,6 +225,8 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 			);
 			const bodyJson = JSON.stringify(body);
 			const idleTimeoutMs = normalizeTimeoutMs(options?.timeoutMs);
+			const websocketConnectTimeoutMs =
+				normalizeTimeoutMs(options?.websocketConnectTimeoutMs) ?? DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS;
 			const transport = options?.transport || "auto";
 			const websocketDisabledForSession = transport !== "sse" && isWebSocketSseFallbackActive(options?.sessionId);
 			if (websocketDisabledForSession) {
@@ -244,6 +247,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 							websocketStarted = true;
 						},
 						idleTimeoutMs,
+						websocketConnectTimeoutMs,
 						options,
 					);
 
@@ -852,7 +856,7 @@ async function connectWebSocket(
 	url: string,
 	headers: Headers,
 	signal?: AbortSignal,
-	idleTimeoutMs?: number,
+	connectTimeoutMs = DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS,
 ): Promise<WebSocketLike> {
 	const WebSocketCtor = await getWebSocketConstructor();
 	if (!WebSocketCtor) {
@@ -914,10 +918,10 @@ async function connectWebSocket(
 		socket.addEventListener("close", onClose);
 		signal?.addEventListener("abort", onAbort);
 
-		if (idleTimeoutMs !== undefined && idleTimeoutMs > 0) {
+		if (connectTimeoutMs > 0) {
 			timeout = setTimeout(() => {
-				fail(new Error(`WebSocket connect timeout after ${idleTimeoutMs}ms`), "connect_timeout");
-			}, idleTimeoutMs);
+				fail(new Error(`WebSocket connect timeout after ${connectTimeoutMs}ms`), "connect_timeout");
+			}, connectTimeoutMs);
 		}
 		if (signal?.aborted) {
 			onAbort();
@@ -930,7 +934,7 @@ async function acquireWebSocket(
 	headers: Headers,
 	sessionId: string | undefined,
 	signal?: AbortSignal,
-	idleTimeoutMs?: number,
+	connectTimeoutMs?: number,
 ): Promise<{
 	socket: WebSocketLike;
 	entry?: CachedWebSocketConnection;
@@ -938,7 +942,7 @@ async function acquireWebSocket(
 	release: (options?: { keep?: boolean }) => void;
 }> {
 	if (!sessionId) {
-		const socket = await connectWebSocket(url, headers, signal, idleTimeoutMs);
+		const socket = await connectWebSocket(url, headers, signal, connectTimeoutMs);
 		return {
 			socket,
 			reused: false,
@@ -976,7 +980,7 @@ async function acquireWebSocket(
 			};
 		}
 		if (cached.busy) {
-			const socket = await connectWebSocket(url, headers, signal, idleTimeoutMs);
+			const socket = await connectWebSocket(url, headers, signal, connectTimeoutMs);
 			return {
 				socket,
 				reused: false,
@@ -991,7 +995,7 @@ async function acquireWebSocket(
 		}
 	}
 
-	const socket = await connectWebSocket(url, headers, signal, idleTimeoutMs);
+	const socket = await connectWebSocket(url, headers, signal, connectTimeoutMs);
 	const entry: CachedWebSocketConnection = { socket, busy: true };
 	websocketSessionCache.set(sessionId, entry);
 	return {
@@ -1268,6 +1272,7 @@ async function processWebSocketStream(
 	model: Model<"openai-codex-responses">,
 	onStart: () => void,
 	idleTimeoutMs: number | undefined,
+	websocketConnectTimeoutMs: number | undefined,
 	options?: OpenAICodexResponsesOptions,
 ): Promise<void> {
 	const { socket, entry, reused, release } = await acquireWebSocket(
@@ -1275,7 +1280,7 @@ async function processWebSocketStream(
 		headers,
 		options?.sessionId,
 		options?.signal,
-		idleTimeoutMs,
+		websocketConnectTimeoutMs,
 	);
 	let keepConnection = true;
 	const useCachedContext = options?.transport === "websocket-cached" || options?.transport === "auto";

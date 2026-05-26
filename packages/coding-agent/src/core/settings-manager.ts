@@ -112,6 +112,7 @@ export interface Settings {
 	warnings?: WarningSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
+	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -748,6 +749,18 @@ export class SettingsManager {
 			maxRetries: this.settings.retry?.provider?.maxRetries,
 			maxRetryDelayMs: this.settings.retry?.provider?.maxRetryDelayMs ?? 60000,
 		};
+	}
+
+	getWebSocketConnectTimeoutMs(): number | undefined {
+		const value = this.settings.websocketConnectTimeoutMs;
+		const timeoutMs = parseHttpIdleTimeoutMs(value);
+		if (timeoutMs !== undefined) {
+			return timeoutMs;
+		}
+		if (value !== undefined) {
+			throw new Error(`Invalid websocketConnectTimeoutMs setting: ${String(value)}`);
+		}
+		return undefined;
 	}
 
 	getHideThinkingBlock(): boolean {

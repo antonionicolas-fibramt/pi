@@ -924,6 +924,93 @@ describe("openai-codex streaming", () => {
 		});
 	});
 
+	it("falls back to SSE when websocket connect does not open before the connect timeout", async () => {
+		vi.useFakeTimers();
+		const token = mockToken();
+		const encoder = new TextEncoder();
+		const sse = buildSSEPayload({ status: "completed" });
+
+		const fetchMock = vi.fn(async (input: string | URL) => {
+			const url = typeof input === "string" ? input : input.toString();
+			if (url !== "https://chatgpt.com/backend-api/codex/responses") {
+				throw new Error(`Unexpected URL: ${url}`);
+			}
+
+			return new Response(
+				new ReadableStream<Uint8Array>({
+					start(controller) {
+						controller.enqueue(encoder.encode(sse));
+						controller.close();
+					},
+				}),
+				{ status: 200, headers: { "content-type": "text/event-stream" } },
+			);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		class MockWebSocket {
+			private listeners = new Map<string, Set<(event: unknown) => void>>();
+
+			addEventListener(type: string, listener: (event: unknown) => void): void {
+				let listeners = this.listeners.get(type);
+				if (!listeners) {
+					listeners = new Set();
+					this.listeners.set(type, listeners);
+				}
+				listeners.add(listener);
+			}
+
+			removeEventListener(type: string, listener: (event: unknown) => void): void {
+				this.listeners.get(type)?.delete(listener);
+			}
+
+			send(): void {
+				throw new Error("send should not be called before websocket open");
+			}
+
+			close(): void {}
+		}
+
+		vi.stubGlobal("WebSocket", MockWebSocket);
+
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.1-codex",
+			name: "GPT-5.1 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const context: Context = {
+			systemPrompt: "You are a helpful assistant.",
+			messages: [{ role: "user", content: "Say hello", timestamp: 1 }],
+		};
+
+		const resultPromise = streamOpenAICodexResponses(model, context, {
+			apiKey: token,
+			sessionId: "ws-connect-timeout",
+			transport: "auto",
+			timeoutMs: 300_000,
+			websocketConnectTimeoutMs: 50,
+		}).result();
+
+		await vi.advanceTimersByTimeAsync(50);
+
+		const result = await resultPromise;
+		expect(result.content.find((content) => content.type === "text")?.text).toBe("Hello");
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(getOpenAICodexWebSocketDebugStats("ws-connect-timeout")).toMatchObject({
+			websocketFailures: 1,
+			sseFallbacks: 1,
+			websocketFallbackActive: true,
+			lastWebSocketError: "WebSocket connect timeout after 50ms",
+		});
+	});
+
 	it("falls back to SSE when a websocket is idle before the first event", async () => {
 		vi.useFakeTimers();
 		const token = mockToken();
