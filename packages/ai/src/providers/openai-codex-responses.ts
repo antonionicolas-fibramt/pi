@@ -1433,7 +1433,7 @@ function buildSSEHeaders(
 	headers.set("content-type", "application/json");
 
 	if (sessionId) {
-		headers.set("session_id", sessionId);
+		headers.set("session-id", sessionId);
 		headers.set("x-client-request-id", sessionId);
 	}
 
@@ -1454,6 +1454,6 @@ function buildWebSocketHeaders(
 	headers.delete("openai-beta");
 	headers.set("OpenAI-Beta", OPENAI_BETA_RESPONSES_WEBSOCKETS);
 	headers.set("x-client-request-id", requestId);
-	headers.set("session_id", requestId);
+	headers.set("session-id", requestId);
 	return headers;
 }

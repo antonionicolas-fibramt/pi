@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Fixed user message transcript rendering to preserve user-authored ordered-list markers ([#5013](https://github.com/earendil-works/pi/issues/5013)).
+- Fixed self-update commands to bypass npm, pnpm, and Bun minimum release age gates for explicit `pi update` runs ([#4929](https://github.com/earendil-works/pi/issues/4929)).
 - Fixed context token estimates to count user image attachments consistently with tool result images ([#4983](https://github.com/earendil-works/pi/issues/4983)).
 - Fixed `httpIdleTimeoutMs` to apply to OpenAI Codex Responses WebSocket idle waits and added `websocketConnectTimeoutMs` for bounded WebSocket connect waits ([#4945](https://github.com/earendil-works/pi/issues/4945)).
 - Fixed `RpcClient` to reject pending requests and consume stdin pipe errors when the child process exits unexpectedly ([#4764](https://github.com/earendil-works/pi/issues/4764)).
