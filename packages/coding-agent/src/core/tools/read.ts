@@ -9,7 +9,7 @@ import { getReadmePath } from "../../config.ts";
 import { keyHint, keyText } from "../../modes/interactive/components/keybinding-hints.ts";
 import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.ts";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.ts";
-import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.ts";
+import { detectNonImageBinaryLabel, detectSupportedImageMimeTypeFromFile } from "../../utils/mime.ts";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import { resolveReadPathAsync, resolveToCwd } from "./path-utils.ts";
@@ -278,6 +278,24 @@ export function createReadToolDefinition(
 							} else {
 								// Read text content.
 								const buffer = await ops.readFile(absolutePath);
+								// Bail before .toString("utf-8") on non-image binaries (PDF / ZIP /
+								// Office / audio / video / executable / etc.). Decoding raw binary
+								// bytes as UTF-8 produces NUL bytes and invalid sequences, which
+								// (a) corrupt downstream persistence (e.g. Postgres jsonb columns
+								// reject  ) and (b) hand the model a gibberish blob.
+								const binaryLabel = detectNonImageBinaryLabel(buffer);
+								if (binaryLabel !== null) {
+									content = [
+										{
+											type: "text",
+											text: `[read: ${path} looks like a binary file (${binaryLabel}). The read tool only supports text files and supported images (jpg/png/gif/webp). Use a dedicated extractor for this format.]`,
+										},
+									];
+									if (aborted) return;
+									signal?.removeEventListener("abort", onAbort);
+									resolve({ content, details });
+									return;
+								}
 								const textContent = buffer.toString("utf-8");
 								const allLines = textContent.split("\n");
 								const totalFileLines = allLines.length;
