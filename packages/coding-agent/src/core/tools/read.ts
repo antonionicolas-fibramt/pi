@@ -275,6 +275,14 @@ export function createReadToolDefinition(
 							} else {
 								// Read text content.
 								const buffer = await ops.readFile(absolutePath);
+								// Non-image binary files (ZIP/PDF/Office/audio/video/executables, ...) must not be decoded
+								// as UTF-8: that injects NUL bytes and invalid sequences which corrupt downstream persistence
+								// (e.g. Postgres jsonb columns reject NUL) and hand the model an unusable blob. A NUL byte in
+								// the first few KB is the canonical binary signature; valid UTF-8 text never contains one.
+								// Zero-dependency, matching the manual magic-byte sniffing already used for images in utils/mime.ts.
+								if (buffer.subarray(0, 4096).includes(0)) {
+									throw new Error(`${path} appears to be a binary file (NUL byte within the first 4 KB). The read tool supports text files and images (jpg/png/gif/webp); use a dedicated extractor for other binary formats.`);
+								}
 								const textContent = buffer.toString("utf-8");
 								const allLines = textContent.split("\n");
 								const totalFileLines = allLines.length;
